@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0-*",
+  "description": "Reloc Console Application",
+  "authors": [ "ShaneK2" ],
+  "tags": [ "InVtero.net", "IOActive", "BlockWatch", "Forensics", "Memory", "Recovery" ],
+  "projectUrl": "http://shanek2.github.io/inVtero.net/",
+  "licenseUrl": "http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt",
+
+  "dependencies": {
+    "System.ServiceModel": "1.0.0",
+    "System.ServiceModel.Http": "4.0.11-rc2-23525",
+    "System.ServiceModel.Primitives": "4.1.0-rc2-23525",
+    "System.ServiceModel.Security": "4.0.1-rc2-23525",
+    "System.Collections": "4.0.11-rc2-23525",
+    "System.Linq": "4.0.1-rc2-23525",
+    "System.Xml.XDocument": "4.0.11-beta-23516",
+    "System.Private.ServiceModel": "4.1.0-rc2-23525",
+    "System.Console": "4.0.0-beta-23516"
+  },
+
+  "commands": {
+    "Reloc": "Reloc"
+  },
+
+  "frameworks": {
+    "dnxcore50": {
+      "dependencies": {
+      }
+    }
+  }
+}

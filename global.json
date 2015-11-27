@@ -1,0 +1,8 @@
+{
+    "projects": [ "src", "test" ],
+    "sdk": {
+        "version": "1.0.0-rc2-16237",
+        "runtime": "coreclr",
+        "architecture": "x64"
+    }
+}
