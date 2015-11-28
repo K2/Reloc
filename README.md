@@ -1,7 +1,8 @@
 # Reloc
 A client tool that downloads relocation data for various PE files.  This 
 ensures when extracting data from memory dumps that you can match memory to 
-disk files precisely. 
+disk files precisely. I've targetted [@dotnet/coreclr](https://github.com/dotnet/coreclr) and [@dotnet/wcf](https://github.com/dotnet/wcf) 
+under the hood.
 
 ## CORECLR
 This code target's coreclr to maximize portability.  Most development has 
@@ -12,7 +13,8 @@ is in place to contact the server.
 
 ## TODO
 Program.cs has a set of upcoming features, feel free to contact or use 
-github to give us some requests.
+github to give us some requests.  If nobody else does it I'll try to figure
+out some python to intergrate into @volatility or @rekal.
 
 ## Example
 After you clone into a directory
