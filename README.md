@@ -1,7 +1,7 @@
 # Reloc
-A client tool that downloads relocation data for various PE files.  This 
-ensures when extracting data from memory dumps that you can match memory to 
-disk files precisely. 
+A client tool that interfaces with a server we host (Thanks @IOActive) with over 200000 fragments of relocation data
+that is compiled from various PE files.  This ensures when extracting data from memory dumps that you can match memory to 
+disk files precisely. I've targetted [@dotnet/coreclr](https://github.com/dotnet/coreclr) and [@dotnet/wcf](https://github.com/dotnet/wcf) under the hood.
 
 ## CORECLR
 This code target's coreclr to maximize portability.  Most development has 
@@ -22,7 +22,8 @@ ported from C, will be moving to safe soon.
 Delocation code is in place however is only exposed to API callers not CLI.
 
 Program.cs has a set of upcoming features, feel free to contact or use 
-github to give us some requests.
+github to give us some requests.  If nobody else does it I'll try to figure
+out some python to intergrate into @volatility or @rekal.
 
 ## Examples
 .NET coreclr restore/run like so;
