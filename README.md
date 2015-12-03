@@ -1,7 +1,7 @@
 # Reloc
 A client tool that interfaces with a server we host (Thanks @IOActive) with over 200000 fragments of relocation data
 that is compiled from various PE files.  This ensures when extracting data from memory dumps that you can match memory to 
-disk files precisely. I've targetted [@dotnet/coreclr](https://github.com/dotnet/coreclr) and [@dotnet/wcf](https://github.com/dotnet/wcf) under the hood.
+disk files precisely. I've targeted [@dotnet/coreclr](https://github.com/dotnet/coreclr) and [@dotnet/wcf](https://github.com/dotnet/wcf) under the hood.
 
 ## CORECLR
 This code target's coreclr to maximize portability.  Most development has 
@@ -23,7 +23,7 @@ Delocation code is in place however is only exposed to API callers not CLI.
 
 Program.cs has a set of upcoming features, feel free to contact or use 
 github to give us some requests.  If nobody else does it I'll try to figure
-out some python to intergrate into @volatility or @rekal.
+out some python to integrate into @volatility.
 
 ## Examples
 .NET coreclr restore/run like so;
@@ -33,8 +33,9 @@ dnx [command] [args]
 dnx commands
 Error: Unable to load application or execute command 'commands'. Available commands: Reloc, Extract.
 ```
-Not all of our routines have been optimized but as you can see below, pretty
-respectiable performance for non-native code _nearly 3500 read/writes in less
+Not all of our routines are optimized yet, it seems like the async IO in coreclr
+is doing really well, as you can see below, pretty
+respectable performance for non-native code _nearly 3500 read/writes in less
 than 13 seconds_. 
 
 ### Example: **dnx run Extract c:\windows\system32 d:\temp\test**
