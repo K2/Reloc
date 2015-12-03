@@ -17,11 +17,15 @@
     "System.Private.ServiceModel": "4.1.0-rc2-23525",
     "System.Console": "4.0.0-beta-23516"
   },
-
   "commands": {
-    "Reloc": "Reloc"
+    "Reloc": "Reloc Reloc",
+    "Extract": "Reloc extract"
   },
-
+  "compilationOptions": {
+    "allowUnsafe": true,
+    "warningsAsErrors": false,
+    "languageVersion": "experimental"
+  },
   "frameworks": {
     "dnxcore50": {
       "dependencies": {
