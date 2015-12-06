@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "DeLocate": {
+      "commandName": "DeLocate",
+      "commandLineArgs": "dumped.msctf.dll msctf.dll-10000000-564D1E7B.reloc 77740000 delocated.msctf.dll False",
+      "workingDirectory": "D:\\temp\\ctf",
+      "sdkVersion": "dnx-coreclr-win-x64.1.0.0-rc2-16249"
+    }
+  }
+}

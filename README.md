@@ -54,6 +54,15 @@ processing time: 00:00:12.9261101
 Compiled 3493 new .reloc data fragments
 ```
 
+### Example: DeLocate
+This command string is a little out of control.  I'll add some switches to make it a bit
+easier or something ;).   Specifying "dnvm exec default dnx " is an alternative way to get
+the runtime version your looking for.
+
+```
+dnvm exec default dnx DeLocate d:dumped.msctf.dll d:msctf.dll-10000000-564D1E7B.reloc 77740000 d:delocated.msctf.dll False
+```
+
 ### Example: **dnx Reloc True ntdll 51DA4B7D**
 After you clone into a directory
 
@@ -98,3 +107,7 @@ c:\git\Reloc\src\Reloc>dir NTDLL.DLL-78E50000-51DA4B7D.reloc.7z
 Simply extract and use the data to establish high assurances in your forensics
 process.
 
+### Bugs
+  * For some reason when the last word is written out (the buffers are being delocated) they do not appear back on disk. 
+    Currently I modify the delocation buffer in-place so in the event your not using disk files and call this method
+	w/o hitting the disk we don't need to waste too much, it's probably a worthless micro-opt anyhow.

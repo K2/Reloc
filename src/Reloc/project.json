@@ -19,7 +19,8 @@
   },
   "commands": {
     "Reloc": "Reloc Reloc",
-    "Extract": "Reloc extract"
+    "Extract": "Reloc extract",
+    "DeLocate": "Reloc DeLocate"
   },
   "compilationOptions": {
     "allowUnsafe": true,

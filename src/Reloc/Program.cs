@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -86,9 +85,10 @@ namespace Reloc
         static bool PrintHelp(string[] args)
         {
             WriteLine($"{Environment.NewLine} Commands: Reloc & Extract");
+            WriteLine($"\tDeLocate DumpedBinaryPath .reloc-file InMemoryBaseAddrInHex Save.File.Exe Is64");
+            WriteLine($"\tDeLocate dumped.msctf.dll msctf.dll-10000000-564D1E7B.reloc 77740000 delocated.msctf.dll False");
             WriteLine($"\tExtract will compile a local directory for reloc's from your own files");
             WriteLine($"\tReloc will download from our hosted server");
-            WriteLine($"\tDeLoc will _DeLocate_ a disk file that was extracted from _memory_ with some other tool (volatility etc...)");
             WriteLine($"\tReloc Is64 Region TimeDateStamp");
             WriteLine($"\te.g. running the default Reloc command ===>>>[dnx Reloc True ntdll 51DA4B7D]<<<===");
             WriteLine($"\twill result in the 64bit 7zip compressed reloc data to be downloaded to NTDLL.DLL-78E50000-51DA4B7D.reloc.7z");
@@ -108,6 +108,10 @@ namespace Reloc
         {
             switch (args[0].ToLowerInvariant())
             {
+                case "delocate":
+                    var dl = new DeLocate();
+                    dl.DeLocateFile(args[1], args[2], ulong.Parse(args[3], NumberStyles.HexNumber), args[4], bool.Parse(args[5])).Wait();
+                    break;
                 case "reloc":
                     Reloc(args);
                     break;

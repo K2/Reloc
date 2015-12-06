@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,6 +22,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.IO;
+using static System.Console;
+using System.Globalization;
 
 namespace Reloc
 {
@@ -44,19 +45,56 @@ namespace Reloc
     /// </summary>
     public class DeLocate
     {
-        /// <summary>
-        /// TODO: Finish example/integration with other tools
-        /// </summary>
-#if FALSE
-        public string DeLocateFile(string fPath, string RelocFile)
+        public async Task<string> DeLocateFile(string fPath, string RelocFile, ulong CurrBase, string SaveTo, bool is64 = false)
         {
-            using (var fs = new FileStream(fPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+            var rv = string.Empty;
+            ulong OrigImageBase=0;
+            bool Is64 = is64;
+            byte[] readBuffer = null;
+            
+            var bytesRead = 0;
+            int PAGE_SIZE = 4096;
+            
+            if(!File.Exists(fPath) || !File.Exists(RelocFile))
             {
-                var reLocbaseName = Path.GetFileNameWithoutExtension(RelocFile);
+                WriteLine($"Can not find input file {fPath}");
+                return rv;
             }
-        }
-#endif
+            // reloc file specifies the ImageBase by convention
+            // [memory-region-name-(a.k.a. module name)]-[0xImageBase]-[TimeDateStamp].reloc
+            var split = RelocFile.Split('-');
+            OrigImageBase = ulong.Parse(split[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            var Delta = CurrBase - OrigImageBase; 
 
+            // should be relativly small
+            var relocData = File.ReadAllBytes(RelocFile);
+            var prepared = ProcessRelocs(relocData).ToArray();
+            
+            using(var fsRelocted = new FileStream(fPath, FileMode.Open, FileAccess.Read, FileShare.Read, PAGE_SIZE, true))
+            {
+                var fsLen = fsRelocted.Length;
+                var Chunks = fsLen / PAGE_SIZE;
+                
+                using(var fsWriteOut = new FileStream(SaveTo, FileMode.Create, FileAccess.Write, FileShare.Write, PAGE_SIZE, true))
+                {
+                    for(uint i=0; i < Chunks; i++)
+                    {
+                        readBuffer = new Byte[PAGE_SIZE];
+                        bytesRead = await fsRelocted.ReadAsync(readBuffer, 0, PAGE_SIZE).ConfigureAwait(false);
+                        
+                        var offset = i*PAGE_SIZE;
+                        
+                        if(is64)
+                            DeLocateBuff64(readBuffer, Delta, (ulong) offset, prepared);
+                        else
+                            DeLocateBuff32(readBuffer, (uint) Delta, (uint) offset, prepared);
+                            
+                        await fsWriteOut.WriteAsync(readBuffer, 0, PAGE_SIZE).ConfigureAwait(false);
+                    }
+                }
+            }
+            return rv;
+        }
 
         ulong OverHang;
         bool CarryOne;
@@ -110,518 +148,523 @@ namespace Reloc
         /// I ported this from a C function and will likely write it in safe/C# eventually ;)
         /// Most of my code is rewrites of earlier native stuff I've done since it's nice to have a sandbox to play in.
         /// </summary>
-        /// <param name="bp"></param>
-        /// <param name="Delta"></param>
-        /// <param name="VA"></param>
-        /// <param name="relocs"></param>
-        public unsafe void DeLocateBuff64(byte* bp, ulong Delta, ulong VA, Reloc[] relocs)
+        /// <param name="bytes">buffer to delocate</param>
+        /// <param name="Delta">Delta between prefered image base and where your loaded now</param>
+        /// <param name="RVA">Relative Virtual Addresss of the byte* buffer</param>
+        /// <param name="relocs">preprocessed .reloc data</param>
+        public unsafe void DeLocateBuff64(byte[] bytes, ulong Delta, ulong RVA, Reloc[] relocs)
         {
             // round down to page alignment
-            var xVA = VA & ~4095UL;
+            var xVA = RVA & ~4095UL;
 
             byte* basep;
 
             if (relocs == null)
                 return;
-
-            for (int i = 0; i < relocs.Length; i++)
+                
+            fixed (Byte* bp = bytes)
             {
-                if (relocs[i].PageRVA == xVA)
+                for (int i = 0; i < relocs.Length; i++)
                 {
-                    // ANY OVERHANG FROM (LAST-VA == VA-4096), use, otherwise ignore
-                    if (OverHang != 0 && (xVA - 4096) == OverHang)
+                    if (relocs[i].PageRVA == xVA)
                     {
-                        var _3bp = bp;
-
-                        // have only written 1 byte in the previous page
-                        switch (OvrOffset)
+                        // ANY OVERHANG FROM (LAST-VA == VA-4096), use, otherwise ignore
+                        if (OverHang != 0 && (xVA - 4096) == OverHang)
                         {
-                            case 1:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00) >> 8));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                            case 2:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                            case 3:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                            case 4:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                            case 5:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                            case 6:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                            case 7:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
-                                break;
-                        }
-
-                        // reset overhang
-                        OverHang = 0;
-                        CarryOne = false;
-                    }
-
-                    for (int j = 0; j < relocs[i].Area.Length; j++)
-                    {
-                        // their can be a trailing null entry sometimes
-                        if (relocs[i].Area[j] == 0)
-                            continue;
-
-                        // 4KB max limit
-                        var offset = (relocs[i].Area[j]) & 0xFFFUL;
-
-                        // trim offset if we are unaligned reading
-                        if (VA != xVA)
-                        {
-                            var Unaligned = VA - xVA;
-
-                            // this reloc entry is for an earlier/unaligned page
-                            if (offset < Unaligned)
-                                continue;
-
-                            offset -= Unaligned;
-                        }
-
-                        // reset to base pointer every fixup
-                        basep = bp;
-
-                        // get byte offset
-                        basep += offset;
-
-                        // WRITE 8
-                        if (offset < 4089)
-                        {
-                            // get int* to byte offset
-                            var intp = (ulong*)basep;
-
-                            var curr = *intp;
-
-                            // this has got to be an error
-                            //if(curr == 0)
-                            //Console::WriteLine("B00G");
-
-                            *intp = curr - Delta;
-                            OvrOffset = 0;
-
-                        }
-                        else {
-                            var _3bp = basep;
-
-                            OverHang = xVA;
-                            OvrOffset = (int)(4096 - offset);
-
-                            // WRITE 7
-                            switch (offset)
+                            var _3bp = bp;
+    
+                            // have only written 1 byte in the previous page
+                            switch (OvrOffset)
                             {
-                                case 4089:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
-                                        break;
-                                    }                                // WRITE 6
-                                case 4090:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-
-                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
-                                        break;
-                                    }                                // WRITE 5
-                                case 4091:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-
-                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
-                                        break;
-                                    }                                // WRITE 4
-                                case 4092:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-
-                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                        break;
-                                    }                                // WRITE 3
-                                case 4093:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-
-                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                        *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                        break;
-                                    }                                // WRITE 2
-                                case 4094:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                        _3bp++;
-
-                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-
-                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
-                                        _3bp++;
-                                        break;
-                                    }                                // WRITE 1
-                                case 4095:
-                                    {
-                                        b = *_3bp;
-                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
-
-                                        *_3bp = (byte)(b - ((Delta & 0x000000FF)));
-                                        break;
-                                    }
-                                default:
+                                case 1:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00) >> 8));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
                                     break;
+                                case 2:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
+                                    break;
+                                case 3:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
+                                    break;
+                                case 4:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
+                                    break;
+                                case 5:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
+                                    break;
+                                case 6:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                    _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
+                                    break;
+                                case 7:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00000000000000) >> 56));
+                                    break;
+                            }
+    
+                            // reset overhang
+                            OverHang = 0;
+                            CarryOne = false;
+                        }
+    
+                        for (int j = 0; j < relocs[i].Area.Length; j++)
+                        {
+                            // their can be a trailing null entry sometimes
+                            if (relocs[i].Area[j] == 0)
+                                continue;
+    
+                            // 4KB max limit
+                            var offset = (relocs[i].Area[j]) & 0xFFFUL;
+    
+                            // trim offset if we are unaligned reading
+                            if (RVA != xVA)
+                            {
+                                var Unaligned = RVA - xVA;
+    
+                                // this reloc entry is for an earlier/unaligned page
+                                if (offset < Unaligned)
+                                    continue;
+    
+                                offset -= Unaligned;
+                            }
+    
+                            // reset to base pointer every fixup
+                            basep = bp;
+    
+                            // get byte offset
+                            basep += offset;
+    
+                            // WRITE 8
+                            if (offset < 4089)
+                            {
+                                // get int* to byte offset
+                                var intp = (ulong*)basep;
+    
+                                var curr = *intp;
+    
+                                // this has got to be an error
+                                //if(curr == 0)
+                                //Console::WriteLine("B00G");
+    
+                                *intp = curr - Delta;
+                                OvrOffset = 0;
+    
+                            }
+                            else {
+                                var _3bp = basep;
+    
+                                OverHang = xVA;
+                                OvrOffset = (int)(4096 - offset);
+    
+                                // WRITE 7
+                                switch (offset)
+                                {
+                                    case 4089:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                            *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF000000000000) >> 48) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF000000000000) >> 48));
+                                            break;
+                                        }                                // WRITE 6
+                                    case 4090:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                            *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+    
+                                            *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF0000000000) >> 40) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF0000000000) >> 40));
+                                            break;
+                                        }                                // WRITE 5
+                                    case 4091:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                            *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+    
+                                            *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF00000000) >> 32) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF00000000) >> 32));
+                                            break;
+                                        }                                // WRITE 4
+                                    case 4092:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                            *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+    
+                                            *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                            break;
+                                        }                                // WRITE 3
+                                    case 4093:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                            *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+    
+                                            *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                            *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                            break;
+                                        }                                // WRITE 2
+                                    case 4094:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                            *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                            _3bp++;
+    
+                                            if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                            CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+    
+                                            *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                            _3bp++;
+                                            break;
+                                        }                                // WRITE 1
+                                    case 4095:
+                                        {
+                                            b = *_3bp;
+                                            CarryOne = b < (Delta & 0x000000FF) ? true : false;
+    
+                                            *_3bp = (byte)(b - ((Delta & 0x000000FF)));
+                                            break;
+                                        }
+                                    default:
+                                        break;
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        public unsafe void DeLocateBuff32(byte* bp, uint Delta, uint VA, Reloc[] relocs)
+        public unsafe void DeLocateBuff32(byte[] bytes, uint Delta, uint RVA, Reloc[] relocs)
         {
             // round down to page alignment
-            var xVA = VA & ~4095u;
+            var xVA = RVA & ~4095u;
 
             byte* basep;
 
             if (relocs == null)
                 return;
-
-            for (int i = 0; i < relocs.Length; i++)
+                
+            fixed(byte* bp = bytes)
             {
-                if (relocs[i].PageRVA == xVA)
+                for (int i = 0; i < relocs.Length; i++)
                 {
-                    // ANY OVERHANG FROM (LAST-VA == VA-4096), use, otherwise ignore
-                    if (OverHang != 0 && (xVA - 4096) == OverHang)
+                    if (relocs[i].PageRVA == xVA)
                     {
-                        var _3bp = bp;
-
-                        // have only written 1 byte in the previous page
-                        switch (OvrOffset)
+                        // ANY OVERHANG FROM (LAST-VA == VA-4096), use, otherwise ignore
+                        if (OverHang != 0 && (xVA - 4096) == OverHang)
                         {
-                            case 1:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF00) >> 8));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                break;
-                            case 2:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                _3bp++;
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                break;
-                            case 3:
-                                if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
-                                *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
-                                break;
-                            default:
-                                break;
-                        }
-                        // reset overhang
-                        OverHang = 0;
-                        CarryOne = false;
-                    }
-
-                    for (int j = 0; j < relocs[i].Area.Length; j++)
-                    {
-                        // their can be a trailing null entry sometimes
-                        if (relocs[i].Area[j] == 0)
-                            continue;
-
-                        // 4KB max limit
-                        var offset = (relocs[i].Area[j]) & 0xFFFu;
-
-                        // trim offset if we are unaligned reading
-                        if (VA != xVA)
-                        {
-                            var Unaligned = VA - xVA;
-
-                            // this reloc entry is for an earlier/unaligned page
-                            if (offset < Unaligned)
-                                continue;
-
-                            offset -= Unaligned;
-                        }
-
-                        // reset to base pointer every fixup
-                        basep = bp;
-
-                        // get byte offset
-                        basep += offset;
-
-                        // WRITE 8
-                        if (offset < 4089)
-                        {
-                            // get int* to byte offset
-                            var intp = (uint*)basep;
-
-                            var curr = *intp;
-
-                            // this has got to be an error
-                            //if(curr == 0)
-                            //Console::WriteLine("B00G");
-
-                            *intp = curr - Delta;
-                            OvrOffset = 0;
-
-                        }
-                        else {
-                            var _3bp = basep;
-
-                            OverHang = xVA;
-                            OvrOffset = (int)(4096 - offset);
-
-                            // WRITE 7
-                            switch (offset)
+                            var _3bp = bp;
+    
+                            // have only written 1 byte in the previous page
+                            switch (OvrOffset)
                             {
-                                // WRITE 3
-                                case 4093:
-                                {
-                                    b = *_3bp;
-                                    CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                    *_3bp = (byte)(b - (Delta & 0x000000FF));
-                                    _3bp++;
+                                case 1:
                                     if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
                                     CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-                                    *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                    *_3bp = (byte)(b - ((Delta & 0xFF00) >> 8));
                                     _3bp++;
                                     if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
                                     CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
                                     *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
-                                    break;
-                                }                                // WRITE 2
-                                case 4094:
-                                {
-                                    b = *_3bp;
-                                    CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                    *_3bp = (byte)(b - (Delta & 0x000000FF));
                                     _3bp++;
                                     if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
-                                    CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
-                                    *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                    CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
+                                    break;
+                                case 2:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
                                     _3bp++;
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
                                     break;
-                                }                                // WRITE 1
-                                case 4095:
-                                {
-                                    b = *_3bp;
-                                    CarryOne = b < (Delta & 0x000000FF) ? true : false;
-                                    *_3bp = (byte)(b - ((Delta & 0x000000FF)));
+                                case 3:
+                                    if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                    CarryOne = b < ((Delta & 0xFF000000) >> 24) ? true : false;
+                                    *_3bp = (byte)(b - ((Delta & 0xFF000000) >> 24));
                                     break;
-                                }
                                 default:
                                     break;
+                            }
+                            // reset overhang
+                            OverHang = 0;
+                            CarryOne = false;
+                        }
+    
+                        for (int j = 0; j < relocs[i].Area.Length; j++)
+                        {
+                            // their can be a trailing null entry sometimes
+                            if (relocs[i].Area[j] == 0)
+                                continue;
+    
+                            // 4KB max limit
+                            var offset = (relocs[i].Area[j]) & 0xFFFu;
+    
+                            // trim offset if we are unaligned reading
+                            if (RVA != xVA)
+                            {
+                                var Unaligned = RVA - xVA;
+    
+                                // this reloc entry is for an earlier/unaligned page
+                                if (offset < Unaligned)
+                                    continue;
+    
+                                offset -= Unaligned;
+                            }
+    
+                            // reset to base pointer every fixup
+                            basep = bp;
+    
+                            // get byte offset
+                            basep += offset;
+    
+                            // WRITE 4
+                            if (offset < 4093)
+                            {
+                                // get int* to byte offset
+                                var intp = (uint*)basep;
+    
+                                var curr = *intp;
+    
+                                // this has got to be an error
+                                //if(curr == 0)
+                                //Console::WriteLine("B00G");
+    
+                                *intp = curr - Delta;
+                                OvrOffset = 0;
+    
+                            }
+                            else {
+                                var _3bp = basep;
+    
+                                OverHang = xVA;
+                                OvrOffset = (int)(4096 - offset);
+    
+                                switch (offset)
+                                {
+                                    // WRITE 3
+                                    case 4093:
+                                    {
+                                        b = *_3bp;
+                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                        _3bp++;
+                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                        _3bp++;
+                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                        CarryOne = b < ((Delta & 0x00FF0000) >> 16) ? true : false;
+                                        *_3bp = (byte)(b - ((Delta & 0x00FF0000) >> 16));
+                                        break;
+                                    }                                // WRITE 2
+                                    case 4094:
+                                    {
+                                        b = *_3bp;
+                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                        *_3bp = (byte)(b - (Delta & 0x000000FF));
+                                        _3bp++;
+                                        if (CarryOne) b = (byte)(*_3bp - 1); else b = *_3bp;
+                                        CarryOne = b < ((Delta & 0x0000FF00) >> 8) ? true : false;
+                                        *_3bp = (byte)(b - ((Delta & 0x0000FF00) >> 8));
+                                        _3bp++;
+                                        break;
+                                    }                                // WRITE 1
+                                    case 4095:
+                                    {
+                                        b = *_3bp;
+                                        CarryOne = b < (Delta & 0x000000FF) ? true : false;
+                                        *_3bp = (byte)(b - ((Delta & 0x000000FF)));
+                                        break;
+                                    }
+                                    default:
+                                        break;
+                                }
                             }
                         }
                     }
