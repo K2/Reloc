@@ -162,10 +162,18 @@ namespace Reloc
 
                         var magic = binReader.ReadInt16();
                         Is64 = magic == 0x20b;
-                        
-                        fs.Position += 20;
-                        // shift down to ABI bitwidth
-                        ImageBase = binReader.ReadUInt64() >> 16; 
+                        if(Is64) {
+                            fs.Position += 20;
+                            // shift down to ABI bitwidth
+                            ImageBase = binReader.ReadUInt64() >> 16;
+                        } 
+                        else
+                        {
+                            fs.Position += 26;
+                            // shift down to ABI bitwidth
+                            ImageBase = binReader.ReadUInt32();
+                        }
+                         
                         // get to sections
                         fs.Position = headerOffset + (Is64 ? 0x108 : 0xF8);
                         for (int i = 0; i < secCount; i++)
