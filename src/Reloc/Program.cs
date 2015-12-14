@@ -110,7 +110,7 @@ namespace Reloc
             {
                 case "delocate":
                     var dl = new DeLocate();
-                    dl.DeLocateFile(args[1], args[2], ulong.Parse(args[3], NumberStyles.HexNumber), args[4], bool.Parse(args[5])).Wait();
+                    dl.DeLocateFile(args[1], args[2], ulong.Parse(args[3], NumberStyles.HexNumber), args[4], bool.Parse(args[5]), true, true).Wait();
                     break;
                 case "reloc":
                     Reloc(args);

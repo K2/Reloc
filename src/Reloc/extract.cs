@@ -28,6 +28,19 @@ using static System.Console;
 
 namespace Reloc
 {
+    public struct MiniSection
+    {
+        public string Name;
+        public uint VirtualSize; // size in memory
+        public uint VirtualOffset; // offset to section base in memroy (from ImageBase)
+        public uint RawFileSize; // size on disk
+        public uint RawFilePointer; // offset to section base on disk (from 0)
+
+        public override string ToString()
+        {
+            return $"{Name} - VBase {VirtualOffset:X}:{VirtualSize:X} - File {RawFilePointer:X}:{RawFileSize:X}";
+        }
+    }
     // Extract compiles a local reloc set that can be used when dumping memory to recover identical files 
     public class Extract
     {
@@ -37,12 +50,20 @@ namespace Reloc
 
         public string FileName;
         public uint RelocPos;
-        public int RelocSize;
+        public uint RelocSize;
         public ulong ImageBase;
+        public long ImageBaseOffset;
         public uint TimeStamp;
+        public bool Is64;
+        public uint SectionAlignment;
+        public uint FileAlignment;
+        public uint SizeOfImage;
+        public uint SizeOfHeaders;
+        public short NumberOfSections;
+        // maybe orderedlist would emit better errors for people
+        public List<MiniSection> SectionPosOffsets;
+
         int secOff;
-        int secCount;
-        bool Is64;
 
         // Helper that delegates execution
         private static async Task CompileEachFileAsync(string path, string searchPattern, string SaveFolder, SearchOption searchOption, Func<string, string, Task> doAsync)
@@ -112,8 +133,8 @@ namespace Reloc
                         }
                         //var readBuffer = GetBuffAsync().Result;
                         using (FileStream stream = new FileStream(outFile,
-                            FileMode.CreateNew, FileAccess.Write, FileShare.None, RelocSize, true))
-                                await stream.WriteAsync(GetBuffAsync().Result, 0, RelocSize);
+                            FileMode.CreateNew, FileAccess.Write, FileShare.None, (int) RelocSize, true))
+                                await stream.WriteAsync(GetBuffAsync().Result, 0, (int) RelocSize);
 
                         NewCnt++;
                         if (Verbose > 0)
@@ -153,7 +174,10 @@ namespace Reloc
                             return false;
 
                         fs.Position += 2;
-                        secCount = binReader.ReadInt16();
+                        NumberOfSections = binReader.ReadInt16();
+
+                        SectionPosOffsets = new List<MiniSection>();
+
                         TimeStamp = binReader.ReadUInt32();
                         fs.Position += 8;
                         secOff = binReader.ReadUInt16();
@@ -163,31 +187,50 @@ namespace Reloc
                         Is64 = magic == 0x20b;
                         if(Is64) {
                             fs.Position += 22;
+                            ImageBaseOffset = fs.Position;
                             ImageBase = binReader.ReadUInt64();
                         } 
                         else
                         {
                             fs.Position += 26;
+                            ImageBaseOffset = fs.Position;
                             ImageBase = binReader.ReadUInt32();
                         }
-                         
+                        SectionAlignment = binReader.ReadUInt32();
+                        FileAlignment = binReader.ReadUInt32();
+                        fs.Position += 16;
+                        SizeOfImage = binReader.ReadUInt32();
+                        SizeOfHeaders = binReader.ReadUInt32();
+                        var CurrEnd = SizeOfHeaders;
+                        /// implicit section for header
+                        SectionPosOffsets.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = 0x400, RawFilePointer = 0, VirtualOffset = 0, Name = "PE Header" });
+
                         // get to sections
                         fs.Position = headerOffset + (Is64 ? 0x108 : 0xF8);
-                        for (int i = 0; i < secCount; i++)
+                        for (int i = 0; i < NumberOfSections; i++)
                         {
                             var secName = binReader.ReadBytes(8);
-                            var secStr = Encoding.ASCII.GetString(secName);
+                            var rawStr = Encoding.ASCII.GetString(secName);
+                            var secStr = new string(rawStr.Where(c => char.IsLetterOrDigit(c) || char.IsPunctuation(c)).ToArray());
+
+                            var Size = binReader.ReadUInt32();
+                            var Pos = binReader.ReadUInt32();
+                            var rawSize = binReader.ReadUInt32();
+                            var rawPos = binReader.ReadUInt32();
+
+                            var currSecNfo = new MiniSection { VirtualSize = Size, VirtualOffset = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr };
+                            SectionPosOffsets.Add(currSecNfo);
 
                             if (Verbose > 2)
                                 Write($" section [{secStr}] ");
 
                             if (secStr.StartsWith(@".reloc", StringComparison.Ordinal))
                             {
-                                fs.Position += 8;
-                                RelocSize = binReader.ReadInt32();
-                                RelocPos = binReader.ReadUInt32();
+                                RelocSize = Size;
+                                RelocPos = Pos;
                             }
-                            fs.Position += 0x20;
+
+                            fs.Position += 0x10;
                         }
                     }
                 }
@@ -212,7 +255,7 @@ namespace Reloc
                 {
                     readBuffer = new Byte[RelocSize];
                     fileStream.Position = RelocPos;
-                    bytesRead = await fileStream.ReadAsync(readBuffer, 0, RelocSize).ConfigureAwait(false);
+                    bytesRead = await fileStream.ReadAsync(readBuffer, 0, (int) RelocSize).ConfigureAwait(false);
                     return readBuffer;
                 }
             }

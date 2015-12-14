@@ -15,6 +15,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{8BB2217D-0F2D-49D1-97BC-3654ED321F3B}") = "Reloc", "src\Reloc\Reloc.xproj", "{7BD03543-5129-4C5E-8E22-1BC569695D62}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Examples", "Examples", "{AAC05EA4-DFC6-41E5-A3DC-7E34EBFCD907}"
+	ProjectSection(SolutionItems) = preProject
+		with-Reloc.htm = with-Reloc.htm
+		without-Reloc.htm = without-Reloc.htm
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

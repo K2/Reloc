@@ -45,26 +45,37 @@ namespace Reloc
     /// </summary>
     public class DeLocate
     {
-        public async Task<string> DeLocateFile(string fPath, string RelocFile, ulong CurrBase, string SaveTo, bool is64 = false)
+        public async Task<string> DeLocateFile(string fPath, string RelocFile, ulong CurrBase, string SaveTo, bool is64 = false, bool FixHeader  = false, bool ScaleFileAlignment = false)
         {
+            var hdrFix = new Extract();
             var rv = string.Empty;
             ulong OrigImageBase=0;
             bool Is64 = is64;
             byte[] readBuffer = null;
             
             var bytesRead = 0;
-            int PAGE_SIZE = 4096;
-            
-            if(!File.Exists(fPath) || !File.Exists(RelocFile))
+            var PAGE_SIZE = 4096;
+            var ScaleFactor = 0u;
+
+
+            if (!File.Exists(fPath) || !File.Exists(RelocFile))
             {
                 WriteLine($"Can not find input file {fPath}");
                 return rv;
             }
+            hdrFix.FileName = fPath;
+
             // reloc file specifies the ImageBase by convention
             // [memory-region-name-(a.k.a. module name)]-[0xImageBase]-[TimeDateStamp].reloc
             var split = RelocFile.Split('-');
             OrigImageBase = ulong.Parse(split[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-            var Delta = CurrBase - OrigImageBase; 
+            var Delta = CurrBase - OrigImageBase;
+
+            if (FixHeader || ScaleFileAlignment)
+            {
+                hdrFix.GetDetails();
+                ScaleFactor = hdrFix.SectionAlignment - hdrFix.FileAlignment;
+            }
 
             // should be relativly small
             var relocData = File.ReadAllBytes(RelocFile);
@@ -72,25 +83,63 @@ namespace Reloc
             
             using(var fsRelocted = new FileStream(fPath, FileMode.Open, FileAccess.Read, FileShare.Read, PAGE_SIZE, true))
             {
+                var WriteSize = PAGE_SIZE;
                 var fsLen = fsRelocted.Length;
                 var Chunks = fsLen / PAGE_SIZE;
-                
-                using(var fsWriteOut = new FileStream(SaveTo, FileMode.Create, FileAccess.Write, FileShare.Write, PAGE_SIZE, true))
+                var CurrSec = 0;
+
+                var CurrSize = hdrFix.SectionPosOffsets[CurrSec].RawFileSize;
+                var CurrEnd = hdrFix.SectionPosOffsets[CurrSec].RawFilePointer + CurrSize;
+
+                using (var fsWriteOut = new FileStream(SaveTo, FileMode.Create, FileAccess.Write, FileShare.Write, PAGE_SIZE, true))
                 {
-                    for(uint i=0; i < Chunks; i++)
+                    readBuffer = new Byte[PAGE_SIZE];
+
+                    for (uint i=0; i < Chunks; i++)
                     {
-                        readBuffer = new Byte[PAGE_SIZE];
                         bytesRead = await fsRelocted.ReadAsync(readBuffer, 0, PAGE_SIZE).ConfigureAwait(false);
                         
                         var offset = i*PAGE_SIZE;
-                        
-                        if(is64)
+
+                        if (i == 0 && FixHeader)
+                            DelocateHeader(readBuffer, OrigImageBase, hdrFix.ImageBaseOffset, hdrFix.Is64);
+
+                        if (is64)
                             DeLocateBuff64(readBuffer, Delta, (ulong) offset, prepared);
                         else
                             DeLocateBuff32(readBuffer, (uint) Delta, (uint) offset, prepared);
-                            
-                        await fsWriteOut.WriteAsync(readBuffer, 0, PAGE_SIZE).ConfigureAwait(false);
+
+                        if (ScaleFileAlignment)
+                        {
+                            if (fsWriteOut.Position + 4096 >= CurrEnd && CurrSec < hdrFix.NumberOfSections)
+                            {
+                                WriteSize = (int)((long)CurrEnd - fsWriteOut.Position);
+                                WriteLine($"Finishing up {hdrFix.SectionPosOffsets[CurrSec].Name}, emit final {WriteSize:X} bytes to move our position to {(fsWriteOut.Position + WriteSize):X}");
+
+                                CurrSec++;
+
+                                if (CurrSec < hdrFix.NumberOfSections)
+                                {
+                                    CurrSize = hdrFix.SectionPosOffsets[CurrSec].RawFileSize;
+                                    CurrEnd = hdrFix.SectionPosOffsets[CurrSec].RawFilePointer + CurrSize;
+                                }
+                            }
+                            else
+                                WriteSize = 4096;
+                        }
+
+                        
+                        await fsWriteOut.WriteAsync(readBuffer, 0, WriteSize).ConfigureAwait(false);
+
+                        if (WriteSize != 4096 && CurrSec < hdrFix.NumberOfSections)
+                        {
+                            fsWriteOut.Position = hdrFix.SectionPosOffsets[CurrSec].RawFilePointer;
+                            /// ensure read position is aligned with us
+                            fsRelocted.Position = hdrFix.SectionPosOffsets[CurrSec].VirtualOffset;
+                        }
+
                     }
+                    rv = SaveTo;
                 }
             }
             return rv;
@@ -142,6 +191,17 @@ namespace Reloc
                 }
             }
             return rv;
+        }
+
+        public static void DelocateHeader(byte[] bytes, ulong OrigBase, long OrigBaseOffset, bool Is64)
+        {
+            int j = 0;
+
+            var newHdrNfo = BitConverter.GetBytes(OrigBase);
+            for (var i = OrigBaseOffset; i < OrigBaseOffset + (Is64 ? 8 : 4); i++)
+            {
+                bytes[i] = newHdrNfo[j++];
+            }
         }
 
         /// <summary>

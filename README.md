@@ -11,13 +11,26 @@ workarounds for the WCF SOAP API calls to ensure an alternative mechanism
 is in place to contact the server.
 
 ## TODO
-Next will be a command for delocating a dumped binary.  That is, an image
+I'm done with this code for a while. I attached an exmaple report from 
+WinMerge from a binary dumped with Volatility then block hashed to 512 bytes
+sizes with Tiger 192 (the same as BlockWatch currently uses :).
+
+As you can see Reloc enabled the dumped binary to match almost exactally.
+
+Compare the differnce [without using Reloc](without-Reloc.htm) and [using Reloc](with-Reloc.htm).
+
+### Quick note to dumper writers
+If your using Reloc make sure you validate precisely the sections so your not accidentially
+missing code due to alignment/code caves.
+
+
+~~Next will be a command for delocating a dumped binary.  That is, an image
 extracted from memory to disk (one-to-one) delocation so that any position
 dependent instructions/references are fixed (delocated) to their original
 values.  Null pages are accounted for since we can not depend on a runtime
 page fault to cause all of a given binary to load.  This does add a bit of 
 complexity to the DeLocate routine.  It's currently implemented unsafe since
-ported from C, will be moving to safe soon. 
+ported from C, will be moving to safe soon.~~
 
 Delocation code is in place however is only exposed to API callers not CLI.
 
