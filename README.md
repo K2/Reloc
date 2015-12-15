@@ -72,6 +72,13 @@ This command string is a little out of control.  I'll add some switches to make 
 easier or something ;).   Specifying "dnvm exec default dnx " is an alternative way to get
 the runtime version your looking for.
 
+Delocate will attempt to automatically rebuild the complete executable on disk from memory.  The only differences
+should be;
+   1) Data section, if anybody has idea how to reverse the data, that will be interesting.
+   2) .reloc missing, it dosent really matter since you download or captured .reloc locally in the first place, you can 
+      cat >> the reloc to the end of your new binary if you would like.
+   3) There may be some artifacts regarding the resources depending on the application specifics. I havent looked at resource handling in a minute.
+
 ```
 dnvm exec default dnx DeLocate d:dumped.msctf.dll d:msctf.dll-10000000-564D1E7B.reloc 77740000 d:delocated.msctf.dll False
 ```
@@ -121,6 +128,7 @@ Simply extract and use the data to establish high assurances in your forensics
 process.
 
 ### Bugs
-  * For some reason when the last word is written out (the buffers are being delocated) they do not appear back on disk. 
+  * Fixe'dm all ;)  
+  * ~~For some reason when the last word is written out (the buffers are being delocated) they do not appear back on disk. 
     Currently I modify the delocation buffer in-place so in the event your not using disk files and call this method
-	w/o hitting the disk we don't need to waste too much, it's probably a worthless micro-opt anyhow.
+	w/o hitting the disk we don't need to waste too much, it's probably a worthless micro-opt anyhow.~~
