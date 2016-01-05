@@ -3,7 +3,7 @@
     "DeLocate": {
       "commandName": "DeLocate",
       "commandLineArgs": "dumped.msctf.dll msctf.dll-10000000-564D1E7B.reloc 77740000 delocated.msctf.dll False",
-      "workingDirectory": "D:\\temp\\ctf"
+      "workingDirectory": "D:\\temp\\ctf",
     }
   }
 }

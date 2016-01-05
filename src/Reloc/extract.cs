@@ -32,7 +32,7 @@ namespace Reloc
     {
         public string Name;
         public uint VirtualSize; // size in memory
-        public uint VirtualOffset; // offset to section base in memroy (from ImageBase)
+        public uint VirtualOffset; // offset to section base in memory (from ImageBase)
         public uint RawFileSize; // size on disk
         public uint RawFilePointer; // offset to section base on disk (from 0)
 
@@ -60,7 +60,7 @@ namespace Reloc
         public uint SizeOfImage;
         public uint SizeOfHeaders;
         public short NumberOfSections;
-        // maybe orderedlist would emit better errors for people
+        // maybe ordered list would emit better errors for people
         public List<MiniSection> SectionPosOffsets;
 
         int secOff;
@@ -73,14 +73,14 @@ namespace Reloc
             
             var sw = Stopwatch.StartNew();
 
-            // really need a simple exception swallowing filesystem walker, enumerations suck with exeptions !
+            // really need a simple exception swallowing file system walker, enumerations suck with exceptions !
             foreach (string file in Directory.EnumerateFiles(path, searchPattern, searchOption))
             {
                 await doAsync?.Invoke(file, SaveFolder);
             }
             
             if(Verbose > 0)
-                WriteLine($"processing time: {sw.Elapsed}");
+                System.Console.WriteLine($"processing time: {sw.Elapsed}");
         }
         
         /// Directory Async enumeration
@@ -148,7 +148,90 @@ namespace Reloc
             return;
         }
 
-        // slim PE 32/64 handling and collect required detials we need for delocation
+        public bool GetDetails(Stream Input)
+        {
+            using (var binReader = new BinaryReader(fs))
+            {
+                if (fs.Length < 0x40)
+                    return false;
+
+                fs.Position = 0x3C;
+                var headerOffset = binReader.ReadUInt32();
+
+                if (headerOffset > fs.Length - 5)
+                    return false;
+
+                fs.Position = headerOffset;
+                var signature = binReader.ReadUInt32();
+
+                if (signature != 0x00004550)
+                    return false;
+
+                fs.Position += 2;
+                NumberOfSections = binReader.ReadInt16();
+
+                SectionPosOffsets = new List<MiniSection>();
+
+                TimeStamp = binReader.ReadUInt32();
+                fs.Position += 8;
+                secOff = binReader.ReadUInt16();
+                fs.Position += 2;
+
+                var magic = binReader.ReadInt16();
+                Is64 = magic == 0x20b;
+                if (Is64)
+                {
+                    fs.Position += 22;
+                    ImageBaseOffset = fs.Position;
+                    ImageBase = binReader.ReadUInt64();
+                }
+                else
+                {
+                    fs.Position += 26;
+                    ImageBaseOffset = fs.Position;
+                    ImageBase = binReader.ReadUInt32();
+                }
+                SectionAlignment = binReader.ReadUInt32();
+                FileAlignment = binReader.ReadUInt32();
+                fs.Position += 16;
+                SizeOfImage = binReader.ReadUInt32();
+                SizeOfHeaders = binReader.ReadUInt32();
+                var CurrEnd = SizeOfHeaders;
+                /// implicit section for header
+                SectionPosOffsets.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = 0x400, RawFilePointer = 0, VirtualOffset = 0, Name = "PE Header" });
+
+                // get to sections
+                fs.Position = headerOffset + (Is64 ? 0x108 : 0xF8);
+                for (int i = 0; i < NumberOfSections; i++)
+                {
+                    var secName = binReader.ReadBytes(8);
+                    var rawStr = Encoding.ASCII.GetString(secName);
+                    var secStr = new string(rawStr.Where(c => char.IsLetterOrDigit(c) || char.IsPunctuation(c)).ToArray());
+
+                    var Size = binReader.ReadUInt32();
+                    var Pos = binReader.ReadUInt32();
+                    var rawSize = binReader.ReadUInt32();
+                    var rawPos = binReader.ReadUInt32();
+
+                    var currSecNfo = new MiniSection { VirtualSize = Size, VirtualOffset = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr };
+                    SectionPosOffsets.Add(currSecNfo);
+
+                    if (Verbose > 2)
+
+                        Write($" section [{secStr}] ");
+
+                    if (secStr.StartsWith(@".reloc", StringComparison.Ordinal))
+                    {
+                        RelocSize = Size;
+                        RelocPos = Pos;
+                    }
+
+                    fs.Position += 0x10;
+                }
+            }
+        }
+
+        // slim PE 32/64 handling and collect required details we need for delocation
         // ImageBase, TimeDateStamp, bitness (64/32) and location/size of .reloc section
         public bool GetDetails()
         {
@@ -156,83 +239,7 @@ namespace Reloc
             try {
                 using (var fs = new FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
                 {
-                    using (var binReader = new BinaryReader(fs))
-                    {
-                        if (fs.Length < 0x40)
-                            return false;
-
-                        fs.Position = 0x3C;
-                        var headerOffset = binReader.ReadUInt32();
-
-                        if (headerOffset > fs.Length - 5)
-                            return false;
-
-                        fs.Position = headerOffset;
-                        var signature = binReader.ReadUInt32();
-
-                        if (signature != 0x00004550)
-                            return false;
-
-                        fs.Position += 2;
-                        NumberOfSections = binReader.ReadInt16();
-
-                        SectionPosOffsets = new List<MiniSection>();
-
-                        TimeStamp = binReader.ReadUInt32();
-                        fs.Position += 8;
-                        secOff = binReader.ReadUInt16();
-                        fs.Position += 2;
-
-                        var magic = binReader.ReadInt16();
-                        Is64 = magic == 0x20b;
-                        if(Is64) {
-                            fs.Position += 22;
-                            ImageBaseOffset = fs.Position;
-                            ImageBase = binReader.ReadUInt64();
-                        } 
-                        else
-                        {
-                            fs.Position += 26;
-                            ImageBaseOffset = fs.Position;
-                            ImageBase = binReader.ReadUInt32();
-                        }
-                        SectionAlignment = binReader.ReadUInt32();
-                        FileAlignment = binReader.ReadUInt32();
-                        fs.Position += 16;
-                        SizeOfImage = binReader.ReadUInt32();
-                        SizeOfHeaders = binReader.ReadUInt32();
-                        var CurrEnd = SizeOfHeaders;
-                        /// implicit section for header
-                        SectionPosOffsets.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = 0x400, RawFilePointer = 0, VirtualOffset = 0, Name = "PE Header" });
-
-                        // get to sections
-                        fs.Position = headerOffset + (Is64 ? 0x108 : 0xF8);
-                        for (int i = 0; i < NumberOfSections; i++)
-                        {
-                            var secName = binReader.ReadBytes(8);
-                            var rawStr = Encoding.ASCII.GetString(secName);
-                            var secStr = new string(rawStr.Where(c => char.IsLetterOrDigit(c) || char.IsPunctuation(c)).ToArray());
-
-                            var Size = binReader.ReadUInt32();
-                            var Pos = binReader.ReadUInt32();
-                            var rawSize = binReader.ReadUInt32();
-                            var rawPos = binReader.ReadUInt32();
-
-                            var currSecNfo = new MiniSection { VirtualSize = Size, VirtualOffset = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr };
-                            SectionPosOffsets.Add(currSecNfo);
-
-                            if (Verbose > 2)
-                                Write($" section [{secStr}] ");
-
-                            if (secStr.StartsWith(@".reloc", StringComparison.Ordinal))
-                            {
-                                RelocSize = Size;
-                                RelocPos = Pos;
-                            }
-
-                            fs.Position += 0x10;
-                        }
-                    }
+                    GetDetails(fs);
                 }
                 rv = true;
             }

@@ -26,7 +26,7 @@
 //              * Current query is for test/slow.  Primary queries in the fat windows client is able to
 //                perform many 10's of thousands of checks per second.
 //
-//          Intergrate with InVtero.net for perfect dumps. (i.e. your memory dump will match your disk files percisely).
+//          Integrate with InVtero.net for perfect dumps. (i.e. your memory dump will match your disk files precisely).
 //
 //          Plugin to 3rd party tools, support volatility/rekal memory dumpers
 //
@@ -155,7 +155,7 @@ namespace Reloc
 
             if (!bool.TryParse(args[1], out Is64))
             {
-                WriteLine($"Error parsing a booliean value (True or False) from [{args[1]}], unable to continue.");
+                WriteLine($"Error parsing a Boolean value (True or False) from [{args[1]}], unable to continue.");
                 return false;
             }
 
@@ -190,10 +190,10 @@ namespace Reloc
             InterWeb.PassWord = "demo";
 
             //
-            // Sending the "Online" packet dosent really matter since the cred's are sent always.
+            // Sending the "Online" packet doesn't really matter since the cred's are sent always.
             // It's more of an application ping/test that you're good to go.
             //
-            // Aside from the downloaded .reloc file.  You will also get the pre ferred load address
+            // Aside from the downloaded .reloc file.  You will also get the preferred load address
             // which can sometimes be missing or altered by due to loader artifacts ? :(
             //
 

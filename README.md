@@ -11,16 +11,16 @@ workarounds for the WCF SOAP API calls to ensure an alternative mechanism
 is in place to contact the server.
 
 ## TODO
-I'm done with this code for a while. I attached an exmaple report from 
+I'm done with this code for a while. I attached an example report from 
 WinMerge from a binary dumped with Volatility then block hashed to 512 bytes
 sizes with Tiger 192 (the same as BlockWatch currently uses :).
 
-As you can see Reloc enabled the dumped binary to match almost exactally.
+As you can see Reloc enabled the dumped binary to match almost exactly.
 
-Compare the differnce [without using Reloc](without-Reloc.htm) and [using Reloc](with-Reloc.htm).
+Compare the difference [without using Reloc](without-Reloc.htm) and [using Reloc](with-Reloc.htm).
 
 ### Quick note to dumper writers
-If your using Reloc make sure you validate precisely the sections so your not accidentially
+If your using Reloc make sure you validate precisely the sections so your not accidentally
 missing code due to alignment/code caves.
 
 

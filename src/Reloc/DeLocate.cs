@@ -39,9 +39,9 @@ namespace Reloc
     /// back into it's disk state.  
     /// 
     /// We handle missing pages so in the event you cant fault the binary into memory at runtime
-    /// (like the case where your analyzing a memory dump) there will be pleanty of missing pages.
+    /// (like the case where your analyzing a memory dump) there will be plenty of missing pages.
     /// This is why the Delocate routine is so hairy, if there is a missing page or not some state
-    /// has to be maintained for instructions which straddle a page boundry.
+    /// has to be maintained for instructions which straddle a page boundary.
     /// </summary>
     public class DeLocate
     {
@@ -77,7 +77,7 @@ namespace Reloc
                 ScaleFactor = hdrFix.SectionAlignment - hdrFix.FileAlignment;
             }
 
-            // should be relativly small
+            // should be relatively small
             var relocData = File.ReadAllBytes(RelocFile);
             var prepared = ProcessRelocs(relocData).ToArray();
             
@@ -153,7 +153,7 @@ namespace Reloc
         /// <summary>
         /// This routine takes a binary .reloc and emit's List of type Reloc
         /// 
-        /// There are theorietically some .reloc entries we do not support, I've not seen too many for recent binaries.
+        /// There are theoretically some .reloc entries we do not support, I've not seen too many for recent binaries.
         /// 
         /// If we wanted to support more, adding more translations here would be fine.
         /// </summary>
@@ -209,8 +209,8 @@ namespace Reloc
         /// Most of my code is rewrites of earlier native stuff I've done since it's nice to have a sandbox to play in.
         /// </summary>
         /// <param name="bytes">buffer to delocate</param>
-        /// <param name="Delta">Delta between prefered image base and where your loaded now</param>
-        /// <param name="RVA">Relative Virtual Addresss of the byte* buffer</param>
+        /// <param name="Delta">Delta between preferred image base and where your loaded now</param>
+        /// <param name="RVA">Relative Virtual Address of the byte* buffer</param>
         /// <param name="relocs">preprocessed .reloc data</param>
         public unsafe void DeLocateBuff64(byte[] bytes, ulong Delta, ulong RVA, Reloc[] relocs)
         {

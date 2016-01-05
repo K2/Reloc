@@ -289,7 +289,7 @@ namespace Reloc
             {
                 //Console.WriteLine("in interceptor");
                 
-                // similar to the above code on accessing Message bufferes
+                // similar to the above code on accessing Message buffers
 
                 //var buffer = request.CreateBufferedCopy(Int32.MaxValue);
                 //request = buffer.CreateMessage();
