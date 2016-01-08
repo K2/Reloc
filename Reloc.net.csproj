@@ -65,28 +65,28 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\src\Reloc\DeLocate.cs">
+    <Compile Include="src\Reloc\DeLocate.cs">
       <Link>DeLocate.cs</Link>
     </Compile>
-    <Compile Include="..\src\Reloc\extract.cs">
+    <Compile Include="src\Reloc\extract.cs">
       <Link>extract.cs</Link>
     </Compile>
-    <Compile Include="..\src\Reloc\IBufferedText.cs">
+    <Compile Include="src\Reloc\IBufferedText.cs">
       <Link>IBufferedText.cs</Link>
     </Compile>
-    <Compile Include="..\src\Reloc\INet.cs">
+    <Compile Include="src\Reloc\INet.cs">
       <Link>INet.cs</Link>
     </Compile>
-    <Compile Include="..\src\Reloc\Net.cs">
+    <Compile Include="src\Reloc\Net.cs">
       <Link>Net.cs</Link>
     </Compile>
-    <Compile Include="..\src\Reloc\NetTypes.cs">
+    <Compile Include="src\Reloc\NetTypes.cs">
       <Link>NetTypes.cs</Link>
     </Compile>
-    <Compile Include="..\src\Reloc\Program.cs">
+    <Compile Include="src\Reloc\Program.cs">
       <Link>Program.cs</Link>
     </Compile>
-    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Reloc.net.AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
