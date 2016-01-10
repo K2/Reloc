@@ -15,6 +15,8 @@ I'm done with this code for a while. I attached an example report from
 WinMerge from a binary dumped with Volatility then block hashed to 512 bytes
 sizes with Tiger 192 (the same as BlockWatch currently uses :).
 
+### Extract relocations from .pdb's as an alternative for MS files.
+
 As you can see Reloc enabled the dumped binary to match almost exactly.
 
 Compare the difference [without using Reloc](without-Reloc.htm) and [using Reloc](with-Reloc.htm).
